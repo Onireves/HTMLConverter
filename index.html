@@ -1,0 +1,264 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FormatFlow | Professional Text-to-HTML Converter</title>
+    <!-- Tailwind CSS 4 Play CDN -->
+    <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+    <!-- Marked.js for Markdown Parsing -->
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <!-- Prism.js for Syntax Highlighting -->
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css" rel="stylesheet" />
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
+    
+    <style>
+        /* Importing Inter and a high-contrast Serif to emulate the 'Glassure' aesthetic */
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Playfair+Display:ital,wght@0,700;1,700&display=swap');
+        
+        :root {
+            --glass-bg: rgba(255, 255, 255, 0.65);
+            --glass-border: rgba(255, 255, 255, 0.4);
+        }
+
+        body {
+            font-family: 'Inter', sans-serif;
+            background: radial-gradient(circle at 0% 0%, #fdfbfb 0%, #ebedee 100%);
+            min-height: 100vh;
+        }
+
+        h1, h2, .glassure-text {
+            font-family: 'Playfair Display', serif;
+            letter-spacing: -0.02em;
+        }
+
+        .glass {
+            background: var(--glass-bg);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            border: 1px solid var(--glass-border);
+            box-shadow: 0 10px 40px -10px rgba(0,0,0,0.05);
+        }
+
+        .custom-scrollbar::-webkit-scrollbar { width: 5px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
+
+        /* Rich Text & Preview List Support */
+        .preview-content, #richInput {
+            line-height: 1.7;
+            color: #334155;
+        }
+        .preview-content ul, #richInput ul {
+            list-style-type: disc !important;
+            margin-left: 1.5rem !important;
+            margin-bottom: 1rem !important;
+            display: block !important;
+        }
+        .preview-content ol, #richInput ol {
+            list-style-type: decimal !important;
+            margin-left: 1.5rem !important;
+            margin-bottom: 1rem !important;
+            display: block !important;
+        }
+        .preview-content li, #richInput li {
+            margin-bottom: 0.25rem;
+            display: list-item !important;
+        }
+        
+        .preview-content h1 { font-family: 'Playfair Display', serif; font-size: 2.25rem; margin-bottom: 1.5rem; color: #0f172a; }
+        .preview-content h2 { font-family: 'Playfair Display', serif; font-size: 1.75rem; margin-top: 2rem; margin-bottom: 1rem; color: #1e293b; }
+
+        [x-cloak] { display: none !important; }
+        
+        pre[class*="language-"] {
+            background: transparent !important;
+            margin: 0 !important;
+            padding: 0 !important;
+        }
+    </style>
+
+    <script>
+        window.app = function() {
+            return {
+                mode: 'rich',
+                view: 'preview',
+                inputText: localStorage.getItem('ff_input') || '',
+                htmlOutput: localStorage.getItem('ff_html') || '',
+                notification: '',
+
+                init() {
+                    this.$nextTick(() => {
+                        if (this.mode === 'rich' && this.htmlOutput) {
+                            const editor = document.getElementById('richInput');
+                            if (editor) editor.innerHTML = this.htmlOutput;
+                        }
+                    });
+
+                    this.$watch('view', (value) => {
+                        if (value === 'code') {
+                            this.$nextTick(() => {
+                                if (window.Prism) Prism.highlightAll();
+                            });
+                        }
+                    });
+                },
+
+                handleRichInput(val) {
+                    this.htmlOutput = val;
+                    this.inputText = val;
+                    this.save();
+                },
+
+                handleMdInput() {
+                    if (window.marked) {
+                        this.htmlOutput = marked.parse(this.inputText);
+                        this.save();
+                    }
+                },
+
+                formatCode(html) {
+                    if (!html) return '';
+                    let formatted = '';
+                    let indent = '';
+                    const tab = '  ';
+                    
+                    // Clean up existing whitespace between tags to prevent "extra spaces"
+                    const cleanHtml = html.replace(/>\s+</g, '><').trim();
+                    
+                    cleanHtml.split(/(?=<)|(?<=>)/).forEach(element => {
+                        if (element.match(/^<\/\w/)) { // Closing tag
+                            indent = indent.substring(tab.length);
+                            formatted += indent + element + '\n';
+                        } else if (element.match(/^<\w[^>]*[^\/]>$/) && !element.match(/^<(br|hr|img|input|link|meta)/)) { // Opening tag
+                            formatted += indent + element + '\n';
+                            indent += tab;
+                        } else { // Text or self-closing
+                            formatted += indent + element + '\n';
+                        }
+                    });
+                    return formatted.trim();
+                },
+
+                copyHtml() {
+                    const text = this.htmlOutput;
+                    const el = document.createElement('textarea');
+                    el.value = text;
+                    document.body.appendChild(el);
+                    el.select();
+                    document.execCommand('copy');
+                    document.body.removeChild(el);
+                    this.showNotification('HTML Copied');
+                },
+
+                clearAll() {
+                    if(confirm('Clear all content?')) {
+                        this.inputText = '';
+                        this.htmlOutput = '';
+                        const editor = document.getElementById('richInput');
+                        if (editor) editor.innerHTML = '';
+                        this.save();
+                    }
+                },
+
+                showNotification(msg) {
+                    this.notification = msg;
+                    setTimeout(() => this.notification = '', 2000);
+                },
+
+                save() {
+                    localStorage.setItem('ff_input', this.inputText);
+                    localStorage.setItem('ff_html', this.htmlOutput);
+                    if (this.view === 'code' && window.Prism) {
+                        setTimeout(() => Prism.highlightAll(), 0);
+                    }
+                }
+            }
+        }
+    </script>
+    <script src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+</head>
+<body class="text-slate-900 antialiased p-4 lg:p-12" x-data="app()">
+
+    <div class="max-w-6xl mx-auto">
+        <!-- Brand Header -->
+        <header class="flex flex-col md:flex-row md:items-end justify-between mb-12 gap-6">
+            <div>
+                <h1 class="text-5xl font-bold text-slate-900 mb-2">Format<span class="italic text-blue-600">Flow</span></h1>
+                <p class="text-slate-400 font-medium tracking-wide uppercase text-xs">Premium Content Transpiler</p>
+            </div>
+            
+            <div class="flex items-center gap-4 bg-white/30 p-1.5 rounded-2xl border border-white/50 shadow-sm">
+                <button @click="mode = 'rich'" :class="mode === 'rich' ? 'bg-white shadow-sm text-slate-900' : 'text-slate-400'" class="px-6 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer">RICH TEXT</button>
+                <button @click="mode = 'md'" :class="mode === 'md' ? 'bg-white shadow-sm text-slate-900' : 'text-slate-400'" class="px-6 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer">MARKDOWN</button>
+            </div>
+        </header>
+
+        <!-- Workbench -->
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-8 items-start">
+            
+            <!-- Left Column: Input -->
+            <div class="space-y-4">
+                <div class="flex items-center justify-between px-2">
+                    <label class="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Input Source</label>
+                    <button @click="clearAll()" class="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 hover:text-red-500 transition-colors">Reset</button>
+                </div>
+                <div class="glass rounded-[2rem] h-[600px] flex flex-col overflow-hidden relative group border-white/60">
+                    <!-- Editor -->
+                    <div x-show="mode === 'rich'" class="flex-1 overflow-hidden relative">
+                        <div 
+                            id="richInput"
+                            contenteditable="true" 
+                            class="absolute inset-0 p-10 focus:outline-none overflow-y-auto custom-scrollbar"
+                            @input="handleRichInput($event.target.innerHTML)"
+                        ></div>
+                        <div x-show="!inputText" class="absolute top-10 left-10 text-slate-300 pointer-events-none italic">
+                            Drop your formatted text here...
+                        </div>
+                    </div>
+                    <textarea 
+                        x-show="mode === 'md'"
+                        x-model="inputText"
+                        @input="handleMdInput()"
+                        class="flex-1 p-10 bg-transparent focus:outline-none resize-none font-mono text-sm text-slate-600 custom-scrollbar"
+                        placeholder="# Start writing..."
+                    ></textarea>
+                </div>
+            </div>
+
+            <!-- Right Column: Output -->
+            <div class="space-y-4">
+                <div class="flex items-center justify-between px-2">
+                    <div class="flex gap-6">
+                        <button @click="view = 'preview'" :class="view === 'preview' ? 'text-blue-600' : 'text-slate-400'" class="text-[10px] font-black uppercase tracking-[0.2em] transition-all cursor-pointer">Preview</button>
+                        <button @click="view = 'code'" :class="view === 'code' ? 'text-blue-600' : 'text-slate-400'" class="text-[10px] font-black uppercase tracking-[0.2em] transition-all cursor-pointer">HTML Code</button>
+                    </div>
+                    <button @click="copyHtml()" class="text-[10px] font-black uppercase tracking-[0.2em] text-blue-600 hover:text-blue-700">Copy Result</button>
+                </div>
+
+                <div class="glass rounded-[2rem] h-[600px] flex flex-col overflow-hidden border-white/60">
+                    <!-- Visual Preview -->
+                    <div x-show="view === 'preview'" class="flex-1 p-10 overflow-y-auto custom-scrollbar bg-white/10">
+                        <div class="preview-content" x-html="htmlOutput || '<p class=\'text-slate-300 italic\'>Awaiting content...</p>'"></div>
+                    </div>
+
+                    <!-- HTML Code -->
+                    <div x-show="view === 'code'" class="flex-1 bg-[#1e1e1e] p-8 overflow-hidden relative">
+                        <div class="absolute top-4 right-4 text-[9px] font-mono text-slate-500 uppercase">Semantic Markup</div>
+                        <pre class="h-full w-full overflow-auto custom-scrollbar"><code class="language-html" x-text="formatCode(htmlOutput)"></code></pre>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Feedback -->
+        <div 
+            x-show="notification" 
+            x-cloak
+            x-transition class="fixed bottom-12 left-1/2 -translate-x-1/2 bg-slate-900 text-white px-8 py-3 rounded-full text-xs font-bold tracking-widest uppercase shadow-2xl z-50"
+            x-text="notification"
+        ></div>
+    </div>
+
+</body>
+</html>

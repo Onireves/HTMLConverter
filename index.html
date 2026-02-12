@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Text-to-HTML Converter</title>
+    <title>FormatFlow | Professional Text-to-HTML Converter</title>
     <!-- Tailwind CSS 4 Play CDN -->
     <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
     <!-- Marked.js for Markdown Parsing -->
@@ -110,6 +110,7 @@
             return {
                 mode: 'rich',
                 view: 'preview',
+                version: 'v1.4.2',
                 darkMode: localStorage.getItem('ff_dark') === 'true',
                 inputText: localStorage.getItem('ff_input') || '',
                 htmlOutput: localStorage.getItem('ff_html') || '',
@@ -140,9 +141,35 @@
                     this.darkMode = !this.darkMode;
                 },
 
+                // Powerful Sanitizer for Word "Goop"
+                sanitize(html) {
+                    if (!html) return '';
+                    let clean = html;
+
+                    // 1. Remove comments (the biggest source of Word goop)
+                    clean = clean.replace(/<!--[\s\S]*?-->/g, '');
+
+                    // 2. Remove metadata tags like <xml>, <style>, <meta>, <link>, and Word namespaces
+                    clean = clean.replace(/<(meta|link|style|xml|script|v:|o:|w:|st1:)[^>]*>[\s\S]*?<\/\1>/gi, '');
+                    clean = clean.replace(/<(meta|link|style|xml|script|v:|o:|w:|st1:)[^>]*>/gi, '');
+
+                    // 3. Strip Microsoft specific attributes but keep basic semantics
+                    clean = clean.replace(/\s+(class|lang|id|xmlns:[^=]*|v:[^=]*|o:[^=]*|w:[^=]*|st1:[^=]*)="[^"]*"/gi, '');
+                    
+                    // 4. Clean up inline styles from Word (MsoNormal etc)
+                    clean = clean.replace(/style="[^"]*mso-[^"]*"/gi, '');
+                    
+                    // 5. Clean up multiple whitespaces
+                    clean = clean.replace(/\s+/g, ' ').trim();
+
+                    return clean;
+                },
+
                 handleRichInput(val) {
-                    this.htmlOutput = val;
-                    this.inputText = val;
+                    // We sanitize before storing so both Code and Preview are clean
+                    const sanitized = this.sanitize(val);
+                    this.htmlOutput = sanitized;
+                    this.inputText = sanitized;
                     this.save();
                 },
 
@@ -159,17 +186,20 @@
                     let indent = '';
                     const tab = '  ';
                     
+                    // Standardize the input by removing current white space between tags
                     const cleanHtml = html.replace(/>\s+</g, '><').trim();
                     
                     cleanHtml.split(/(?=<)|(?<=>)/).forEach(element => {
-                        if (element.match(/^<\/\w/)) {
+                        if (element.match(/^<\/\w/)) { // Closing tag
                             indent = indent.substring(tab.length);
                             formatted += indent + element + '\n';
-                        } else if (element.match(/^<\w[^>]*[^\/]>$/) && !element.match(/^<(br|hr|img|input|link|meta)/)) {
+                        } else if (element.match(/^<\w[^>]*[^\/]>$/) && !element.match(/^<(br|hr|img|input|link|meta)/)) { // Opening tag
                             formatted += indent + element + '\n';
                             indent += tab;
-                        } else {
-                            formatted += indent + element + '\n';
+                        } else { // Text node or self-closing tag
+                            if (element.trim()) {
+                                formatted += indent + element.trim() + '\n';
+                            }
                         }
                     });
                     return formatted.trim();
@@ -213,9 +243,9 @@
     </script>
     <script src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
 </head>
-<body class="antialiased p-4 lg:p-12" :class="{ 'dark-mode': darkMode }" x-data="app()">
+<body class="antialiased p-4 lg:p-12 relative" :class="{ 'dark-mode': darkMode }" x-data="app()">
 
-    <div class="max-w-6xl mx-auto">
+    <div class="max-w-6xl mx-auto min-h-[calc(100vh-6rem)] flex flex-col">
         <!-- Brand Header -->
         <header class="flex flex-col md:flex-row md:items-end justify-between mb-12 gap-6">
             <div>
@@ -236,10 +266,10 @@
         </header>
 
         <!-- Workbench -->
-        <div class="grid grid-cols-1 lg:grid-cols-2 gap-8 items-start">
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-8 items-stretch flex-1">
             
             <!-- Left Column: Input -->
-            <div class="flex flex-col h-full">
+            <div class="flex flex-col">
                 <!-- Unified Header Row -->
                 <div class="flex items-center justify-between px-1 h-12 mb-2">
                     <div class="flex items-center gap-1.5 bg-black/5 dark:bg-white/5 p-1 rounded-xl border border-white/10">
@@ -253,7 +283,7 @@
                     <label class="text-[10px] font-black uppercase tracking-[0.2em]" :class="darkMode ? 'text-slate-500' : 'text-slate-400'">Input Source</label>
                 </div>
 
-                <div class="glass rounded-[2rem] h-[600px] flex flex-col overflow-hidden relative group">
+                <div class="glass rounded-[2rem] flex-1 min-h-[600px] flex flex-col overflow-hidden relative group">
                     <div x-show="mode === 'rich'" class="flex-1 overflow-hidden relative">
                         <div 
                             id="richInput"
@@ -274,7 +304,7 @@
             </div>
 
             <!-- Right Column: Output -->
-            <div class="flex flex-col h-full">
+            <div class="flex flex-col">
                 <!-- Unified Header Row (Matched Height) -->
                 <div class="flex items-center justify-between px-1 h-12 mb-2">
                     <div class="flex items-center gap-1.5 bg-black/5 dark:bg-white/5 p-1 rounded-xl border border-white/10">
@@ -288,7 +318,7 @@
                     <label class="text-[10px] font-black uppercase tracking-[0.2em]" :class="darkMode ? 'text-slate-500' : 'text-slate-400'">Transpiled Result</label>
                 </div>
 
-                <div class="glass rounded-[2rem] h-[600px] flex flex-col overflow-hidden">
+                <div class="glass rounded-[2rem] flex-1 min-h-[600px] flex flex-col overflow-hidden">
                     <!-- Visual Preview -->
                     <div x-show="view === 'preview'" class="flex-1 p-10 overflow-y-auto custom-scrollbar bg-white/5">
                         <div class="preview-content" x-html="htmlOutput || '<p class=\'opacity-30 italic\'>Awaiting content generation...</p>'"></div>
@@ -302,6 +332,11 @@
                 </div>
             </div>
         </div>
+
+        <!-- Suble Version Info (Bottom Left) -->
+        <footer class="mt-8 mb-4">
+            <span class="text-[9px] font-black uppercase tracking-[0.2em] opacity-20" x-text="version"></span>
+        </footer>
 
         <!-- Feedback Notification -->
         <div 

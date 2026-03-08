@@ -1,0 +1,758 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LocateAI | Live Location Detector</title>
+    <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Playfair+Display:ital,wght@0,700;1,700&display=swap');
+
+        :root {
+            --glass-bg: rgba(255, 255, 255, 0.75);
+            --glass-border: rgba(255, 255, 255, 0.5);
+            --bg-gradient: radial-gradient(circle at 20% 20%, #0f2027 0%, #203a43 50%, #2c5364 100%);
+            --text-main: #f1f5f9;
+            --text-muted: #94a3b8;
+            --accent: #38bdf8;
+            --accent-glow: rgba(56, 189, 248, 0.3);
+        }
+
+        * { box-sizing: border-box; }
+
+        body {
+            font-family: 'Inter', sans-serif;
+            background: var(--bg-gradient);
+            color: var(--text-main);
+            min-height: 100vh;
+            margin: 0;
+        }
+
+        h1, h2 { font-family: 'Playfair Display', serif; }
+
+        .glass {
+            background: rgba(15, 23, 42, 0.6);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            box-shadow: 0 20px 60px -10px rgba(0, 0, 0, 0.5);
+        }
+
+        .glass-light {
+            background: rgba(255, 255, 255, 0.06);
+            backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+        }
+
+        #videoElement {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            border-radius: 1.25rem;
+            display: block;
+            transform: scaleX(-1); /* Mirror for selfie camera feel */
+        }
+
+        #videoElement.rear-camera {
+            transform: scaleX(1);
+        }
+
+        .pulse-ring {
+            animation: pulse-ring 2s cubic-bezier(0.215, 0.61, 0.355, 1) infinite;
+        }
+
+        @keyframes pulse-ring {
+            0% { transform: scale(0.8); opacity: 1; }
+            80%, 100% { transform: scale(1.4); opacity: 0; }
+        }
+
+        .scan-line {
+            animation: scan 3s ease-in-out infinite;
+        }
+
+        @keyframes scan {
+            0%, 100% { top: 10%; opacity: 1; }
+            50% { top: 85%; opacity: 0.5; }
+        }
+
+        .analyzing-badge {
+            animation: blink 1s ease-in-out infinite;
+        }
+
+        @keyframes blink {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.4; }
+        }
+
+        .result-card {
+            animation: slideUp 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+
+        @keyframes slideUp {
+            from { transform: translateY(20px); opacity: 0; }
+            to { transform: translateY(0); opacity: 1; }
+        }
+
+        .glow-btn {
+            background: linear-gradient(135deg, #38bdf8, #0284c7);
+            box-shadow: 0 0 30px var(--accent-glow), 0 4px 20px rgba(0,0,0,0.3);
+            transition: all 0.3s ease;
+        }
+
+        .glow-btn:hover {
+            box-shadow: 0 0 50px var(--accent-glow), 0 8px 30px rgba(0,0,0,0.4);
+            transform: translateY(-2px);
+        }
+
+        .glow-btn:active { transform: translateY(0); }
+
+        .glow-btn:disabled {
+            background: linear-gradient(135deg, #475569, #334155);
+            box-shadow: none;
+            transform: none;
+            cursor: not-allowed;
+        }
+
+        .confidence-bar {
+            transition: width 1s cubic-bezier(0.16, 1, 0.3, 1);
+            background: linear-gradient(90deg, #38bdf8, #818cf8);
+        }
+
+        #apiKeyInput {
+            background: rgba(255,255,255,0.05);
+            border: 1px solid rgba(255,255,255,0.1);
+            color: var(--text-main);
+            outline: none;
+            transition: border-color 0.2s;
+        }
+
+        #apiKeyInput:focus {
+            border-color: var(--accent);
+            box-shadow: 0 0 0 3px var(--accent-glow);
+        }
+
+        .tag {
+            background: rgba(56, 189, 248, 0.15);
+            border: 1px solid rgba(56, 189, 248, 0.3);
+            color: #7dd3fc;
+        }
+
+        .custom-scrollbar::-webkit-scrollbar { width: 4px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: #334155; border-radius: 10px; }
+
+        .history-item {
+            transition: all 0.2s;
+        }
+        .history-item:hover {
+            background: rgba(255,255,255,0.05);
+        }
+
+        #canvas { display: none; }
+    </style>
+</head>
+<body class="antialiased p-4 lg:p-8">
+
+<canvas id="canvas"></canvas>
+
+<div class="max-w-6xl mx-auto">
+
+    <!-- Header -->
+    <header class="flex flex-col sm:flex-row sm:items-end justify-between mb-8 gap-4">
+        <div>
+            <div class="flex items-center gap-3 mb-1">
+                <div class="w-8 h-8 rounded-xl flex items-center justify-center" style="background: linear-gradient(135deg, #38bdf8, #818cf8);">
+                    <svg class="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"/>
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"/>
+                    </svg>
+                </div>
+                <h1 class="text-3xl font-bold">Locate<span class="italic" style="color: var(--accent);">AI</span></h1>
+            </div>
+            <p class="text-xs font-medium tracking-widest uppercase" style="color: var(--text-muted);">Live Visual Location Intelligence</p>
+        </div>
+        <div class="flex items-center gap-2">
+            <span id="statusBadge" class="hidden px-3 py-1 rounded-full text-xs font-bold tracking-wider uppercase analyzing-badge" style="background: rgba(56,189,248,0.15); color: #38bdf8; border: 1px solid rgba(56,189,248,0.3);">
+                ⚡ Analyzing...
+            </span>
+        </div>
+    </header>
+
+    <!-- API Key Setup Banner -->
+    <div id="apiKeyBanner" class="glass rounded-3xl p-6 mb-6">
+        <div class="flex flex-col sm:flex-row gap-4 items-start sm:items-center">
+            <div class="flex-1">
+                <div class="flex items-center gap-2 mb-1">
+                    <svg class="w-4 h-4" style="color: var(--accent);" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z"/>
+                    </svg>
+                    <span class="text-sm font-semibold">Anthropic API Key</span>
+                </div>
+                <p class="text-xs" style="color: var(--text-muted);">Your key is used only in your browser and never stored on any server.</p>
+            </div>
+            <div class="flex gap-2 w-full sm:w-auto">
+                <input id="apiKeyInput" type="password" placeholder="sk-ant-..." class="flex-1 sm:w-72 px-4 py-2.5 rounded-xl text-sm font-mono"/>
+                <button onclick="saveApiKey()" class="glow-btn px-5 py-2.5 rounded-xl text-sm font-bold text-white whitespace-nowrap">Connect</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Main Layout -->
+    <div class="grid grid-cols-1 lg:grid-cols-5 gap-6">
+
+        <!-- Camera Column -->
+        <div class="lg:col-span-3 flex flex-col gap-4">
+
+            <!-- Video Container -->
+            <div class="glass rounded-3xl overflow-hidden relative" style="aspect-ratio: 16/9; min-height: 300px;">
+                <!-- Idle State -->
+                <div id="idleState" class="absolute inset-0 flex flex-col items-center justify-center gap-4">
+                    <div class="w-20 h-20 rounded-3xl glass-light flex items-center justify-center">
+                        <svg class="w-10 h-10" style="color: var(--text-muted);" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M15 10l4.553-2.069A1 1 0 0121 8.82v6.36a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"/>
+                        </svg>
+                    </div>
+                    <div class="text-center">
+                        <p class="font-semibold mb-1">Camera Ready</p>
+                        <p class="text-xs" style="color: var(--text-muted);">Point your camera at any location, building, or landmark</p>
+                    </div>
+                    <button onclick="startCamera()" class="glow-btn px-6 py-3 rounded-2xl text-sm font-bold text-white">
+                        Start Camera
+                    </button>
+                </div>
+
+                <!-- Video Element -->
+                <video id="videoElement" autoplay playsinline muted class="hidden"></video>
+
+                <!-- Scan Overlay (shown during analysis) -->
+                <div id="scanOverlay" class="hidden absolute inset-0 pointer-events-none">
+                    <div class="absolute inset-0 rounded-3xl" style="border: 2px solid rgba(56,189,248,0.4);"></div>
+                    <!-- Corner markers -->
+                    <div class="absolute top-4 left-4 w-6 h-6 border-t-2 border-l-2 rounded-tl-lg" style="border-color: #38bdf8;"></div>
+                    <div class="absolute top-4 right-4 w-6 h-6 border-t-2 border-r-2 rounded-tr-lg" style="border-color: #38bdf8;"></div>
+                    <div class="absolute bottom-4 left-4 w-6 h-6 border-b-2 border-l-2 rounded-bl-lg" style="border-color: #38bdf8;"></div>
+                    <div class="absolute bottom-4 right-4 w-6 h-6 border-b-2 border-r-2 rounded-br-lg" style="border-color: #38bdf8;"></div>
+                    <!-- Scan line -->
+                    <div class="scan-line absolute left-4 right-4 h-px" style="background: linear-gradient(90deg, transparent, #38bdf8, transparent);"></div>
+                </div>
+
+                <!-- Live badge -->
+                <div id="liveBadge" class="hidden absolute top-4 left-4 flex items-center gap-2 px-3 py-1.5 rounded-full glass-light">
+                    <div class="w-2 h-2 rounded-full bg-red-400 pulse-ring relative">
+                        <div class="w-2 h-2 rounded-full bg-red-400 absolute inset-0"></div>
+                    </div>
+                    <span class="text-xs font-bold text-white">LIVE</span>
+                </div>
+
+                <!-- Camera switch button -->
+                <button id="switchCamBtn" onclick="switchCamera()" class="hidden absolute top-4 right-4 p-2.5 rounded-xl glass-light hover:bg-white/10 transition-colors" title="Switch Camera">
+                    <svg class="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+                    </svg>
+                </button>
+            </div>
+
+            <!-- Controls -->
+            <div class="flex gap-3">
+                <button id="analyzeBtn" onclick="analyzeFrame()" disabled class="glow-btn flex-1 py-4 rounded-2xl text-sm font-bold text-white flex items-center justify-center gap-2">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/>
+                    </svg>
+                    Identify Location
+                </button>
+                <button id="autoBtn" onclick="toggleAuto()" disabled class="glass px-5 py-4 rounded-2xl text-sm font-bold text-white flex items-center gap-2 hover:bg-white/10 transition-colors">
+                    <svg id="autoIcon" class="w-5 h-5" style="color: var(--text-muted);" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                    </svg>
+                    <span id="autoLabel" style="color: var(--text-muted);">Auto</span>
+                </button>
+            </div>
+
+            <!-- Auto interval indicator -->
+            <div id="autoIndicator" class="hidden glass-light rounded-2xl px-4 py-3 flex items-center gap-3">
+                <div class="w-2 h-2 rounded-full analyzing-badge" style="background: var(--accent);"></div>
+                <span class="text-xs" style="color: var(--text-muted);">Auto-analyzing every <span id="countdownDisplay" class="font-bold" style="color: var(--accent);">10s</span></span>
+                <div class="flex-1 h-1 rounded-full bg-white/5 overflow-hidden">
+                    <div id="progressBar" class="h-full rounded-full transition-all" style="background: var(--accent); width: 100%;"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Results Column -->
+        <div class="lg:col-span-2 flex flex-col gap-4">
+
+            <!-- Current Result -->
+            <div class="glass rounded-3xl p-6 flex-1">
+                <div class="flex items-center gap-2 mb-4">
+                    <svg class="w-4 h-4" style="color: var(--accent);" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7"/>
+                    </svg>
+                    <span class="text-xs font-black uppercase tracking-widest" style="color: var(--text-muted);">Location Analysis</span>
+                </div>
+
+                <!-- Empty State -->
+                <div id="emptyResult" class="flex flex-col items-center justify-center py-10 gap-3 text-center">
+                    <div class="w-16 h-16 rounded-2xl glass-light flex items-center justify-center mb-2">
+                        <svg class="w-8 h-8" style="color: var(--text-muted);" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"/>
+                        </svg>
+                    </div>
+                    <p class="text-sm font-medium" style="color: var(--text-muted);">Point your camera somewhere and tap <strong class="text-white">Identify Location</strong></p>
+                </div>
+
+                <!-- Result Content -->
+                <div id="resultContent" class="hidden result-card">
+                    <!-- Location Name -->
+                    <div class="mb-4">
+                        <p class="text-xs font-bold uppercase tracking-widest mb-1" style="color: var(--accent);">Identified Location</p>
+                        <h2 id="locationName" class="text-2xl font-bold leading-tight"></h2>
+                    </div>
+
+                    <!-- Type Tag -->
+                    <div id="locationTypeTags" class="flex flex-wrap gap-2 mb-4"></div>
+
+                    <!-- Confidence -->
+                    <div class="mb-4">
+                        <div class="flex justify-between items-center mb-1.5">
+                            <span class="text-xs" style="color: var(--text-muted);">Confidence</span>
+                            <span id="confidenceValue" class="text-xs font-bold" style="color: var(--accent);"></span>
+                        </div>
+                        <div class="h-1.5 rounded-full bg-white/5 overflow-hidden">
+                            <div id="confidenceBar" class="confidence-bar h-full rounded-full" style="width: 0%;"></div>
+                        </div>
+                    </div>
+
+                    <!-- Description -->
+                    <div class="glass-light rounded-2xl p-4 mb-4">
+                        <p id="locationDescription" class="text-sm leading-relaxed" style="color: var(--text-muted);"></p>
+                    </div>
+
+                    <!-- Details Grid -->
+                    <div id="detailsGrid" class="grid grid-cols-2 gap-3">
+                        <!-- Populated dynamically -->
+                    </div>
+
+                    <!-- Timestamp -->
+                    <p id="resultTimestamp" class="text-xs mt-4 text-right" style="color: rgba(148,163,184,0.4);"></p>
+                </div>
+
+                <!-- Error State -->
+                <div id="errorResult" class="hidden text-center py-8">
+                    <div class="w-12 h-12 rounded-2xl mx-auto mb-3 flex items-center justify-center" style="background: rgba(239,68,68,0.15);">
+                        <svg class="w-6 h-6 text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
+                        </svg>
+                    </div>
+                    <p id="errorMessage" class="text-sm text-red-300"></p>
+                </div>
+            </div>
+
+            <!-- History -->
+            <div class="glass rounded-3xl p-5">
+                <div class="flex items-center justify-between mb-3">
+                    <span class="text-xs font-black uppercase tracking-widest" style="color: var(--text-muted);">History</span>
+                    <button onclick="clearHistory()" class="text-xs hover:text-red-400 transition-colors" style="color: rgba(148,163,184,0.4);">Clear</button>
+                </div>
+                <div id="historyList" class="space-y-1 max-h-48 overflow-y-auto custom-scrollbar">
+                    <p class="text-xs text-center py-3" style="color: rgba(148,163,184,0.3);">No history yet</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Footer -->
+    <footer class="mt-8 text-center">
+        <p class="text-xs" style="color: rgba(148,163,184,0.3);">Powered by Claude claude-opus-4-6 Vision · Your API key stays local</p>
+    </footer>
+</div>
+
+<script>
+    // ─── State ───────────────────────────────────────────────────────────────
+    let apiKey = localStorage.getItem('locateai_key') || '';
+    let stream = null;
+    let isAnalyzing = false;
+    let autoMode = false;
+    let autoInterval = null;
+    let autoCountdown = null;
+    let countdownSec = 10;
+    let currentFacingMode = 'environment'; // start rear-facing
+    let history = JSON.parse(localStorage.getItem('locateai_history') || '[]');
+
+    // ─── Init ─────────────────────────────────────────────────────────────────
+    window.addEventListener('DOMContentLoaded', () => {
+        if (apiKey) {
+            document.getElementById('apiKeyInput').value = '••••••••••••••••';
+            hideBanner();
+        }
+        renderHistory();
+    });
+
+    // ─── API Key ─────────────────────────────────────────────────────────────
+    function saveApiKey() {
+        const input = document.getElementById('apiKeyInput');
+        const val = input.value.trim();
+        if (!val || val.includes('•')) return;
+        apiKey = val;
+        localStorage.setItem('locateai_key', apiKey);
+        input.value = '••••••••••••••••';
+        hideBanner();
+        showToast('API key saved ✓');
+    }
+
+    function hideBanner() {
+        document.getElementById('apiKeyBanner').style.display = 'none';
+    }
+
+    // ─── Camera ──────────────────────────────────────────────────────────────
+    async function startCamera() {
+        try {
+            const constraints = {
+                video: {
+                    facingMode: currentFacingMode,
+                    width: { ideal: 1280 },
+                    height: { ideal: 720 }
+                }
+            };
+            stream = await navigator.mediaDevices.getUserMedia(constraints);
+            const video = document.getElementById('videoElement');
+            video.srcObject = stream;
+
+            // Update mirror class based on camera type
+            if (currentFacingMode === 'environment') {
+                video.classList.add('rear-camera');
+            } else {
+                video.classList.remove('rear-camera');
+            }
+
+            video.classList.remove('hidden');
+            document.getElementById('idleState').style.display = 'none';
+            document.getElementById('liveBadge').classList.remove('hidden');
+            document.getElementById('switchCamBtn').classList.remove('hidden');
+
+            // Enable buttons
+            document.getElementById('analyzeBtn').disabled = false;
+            document.getElementById('autoBtn').disabled = false;
+
+        } catch (err) {
+            showError('Camera access denied. Please allow camera permissions and try again.');
+            console.error('Camera error:', err);
+        }
+    }
+
+    async function switchCamera() {
+        currentFacingMode = currentFacingMode === 'environment' ? 'user' : 'environment';
+        if (stream) {
+            stream.getTracks().forEach(t => t.stop());
+        }
+        await startCamera();
+    }
+
+    // ─── Frame Capture ───────────────────────────────────────────────────────
+    function captureFrame() {
+        const video = document.getElementById('videoElement');
+        const canvas = document.getElementById('canvas');
+        canvas.width = video.videoWidth || 640;
+        canvas.height = video.videoHeight || 360;
+        const ctx = canvas.getContext('2d');
+
+        // If front camera, flip back before capture
+        if (currentFacingMode === 'user') {
+            ctx.save();
+            ctx.scale(-1, 1);
+            ctx.drawImage(video, -canvas.width, 0, canvas.width, canvas.height);
+            ctx.restore();
+        } else {
+            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+        }
+
+        return canvas.toDataURL('image/jpeg', 0.85).split(',')[1];
+    }
+
+    // ─── Analysis ────────────────────────────────────────────────────────────
+    async function analyzeFrame() {
+        if (!apiKey) {
+            showError('Please enter your Anthropic API key first.');
+            document.getElementById('apiKeyBanner').style.display = 'block';
+            return;
+        }
+        if (!stream || isAnalyzing) return;
+
+        isAnalyzing = true;
+        document.getElementById('analyzeBtn').disabled = true;
+        document.getElementById('statusBadge').classList.remove('hidden');
+        document.getElementById('scanOverlay').classList.remove('hidden');
+        document.getElementById('emptyResult').classList.add('hidden');
+        document.getElementById('errorResult').classList.add('hidden');
+        document.getElementById('resultContent').classList.add('hidden');
+
+        try {
+            const imageData = captureFrame();
+            const result = await callClaudeVision(imageData);
+            displayResult(result);
+            addToHistory(result);
+        } catch (err) {
+            console.error('Analysis error:', err);
+            showError(err.message || 'Analysis failed. Check your API key and try again.');
+        } finally {
+            isAnalyzing = false;
+            document.getElementById('analyzeBtn').disabled = !autoMode;
+            document.getElementById('statusBadge').classList.add('hidden');
+            document.getElementById('scanOverlay').classList.add('hidden');
+        }
+    }
+
+    async function callClaudeVision(base64Image) {
+        const prompt = `You are a location and landmark identification expert. Analyze this image and identify:
+
+1. The specific location, building, landmark, or type of site visible
+2. What type of place it is (e.g., restaurant, museum, park, office, home, street, etc.)
+3. Any notable architectural or environmental features
+4. Your confidence level (0–100)
+5. Geographic region if identifiable (city, country, general area)
+6. A brief atmospheric description
+
+Respond ONLY with a valid JSON object in this exact format:
+{
+  "name": "Name of the location or place type",
+  "type": ["tag1", "tag2"],
+  "confidence": 85,
+  "description": "2-3 sentence description of what is seen and where it might be",
+  "region": "City/Country or 'Undetermined'",
+  "architecture": "Brief note on style or environment",
+  "time_of_day": "Day / Night / Dusk / Dawn / Indoor"
+}
+
+If the image is too dark, blurry, or shows nothing identifiable, set confidence below 30 and name it "Unidentifiable Location".`;
+
+        const response = await fetch('https://api.anthropic.com/v1/messages', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'x-api-key': apiKey,
+                'anthropic-version': '2023-06-01',
+                'anthropic-dangerous-request-url-override': 'true'
+            },
+            body: JSON.stringify({
+                model: 'claude-opus-4-6',
+                max_tokens: 1024,
+                messages: [{
+                    role: 'user',
+                    content: [
+                        {
+                            type: 'image',
+                            source: {
+                                type: 'base64',
+                                media_type: 'image/jpeg',
+                                data: base64Image
+                            }
+                        },
+                        { type: 'text', text: prompt }
+                    ]
+                }]
+            })
+        });
+
+        if (!response.ok) {
+            const err = await response.json().catch(() => ({}));
+            if (response.status === 401) throw new Error('Invalid API key. Please check and reconnect.');
+            if (response.status === 429) throw new Error('Rate limit reached. Please wait a moment and try again.');
+            throw new Error(err.error?.message || `API error ${response.status}`);
+        }
+
+        const data = await response.json();
+        const text = data.content[0]?.text || '';
+
+        // Extract JSON from the response
+        const jsonMatch = text.match(/\{[\s\S]*\}/);
+        if (!jsonMatch) throw new Error('Could not parse location data from response.');
+
+        return JSON.parse(jsonMatch[0]);
+    }
+
+    // ─── Display ─────────────────────────────────────────────────────────────
+    function displayResult(result) {
+        document.getElementById('locationName').textContent = result.name || 'Unknown Location';
+
+        // Confidence
+        const conf = Math.min(100, Math.max(0, result.confidence || 0));
+        document.getElementById('confidenceValue').textContent = `${conf}%`;
+        setTimeout(() => {
+            document.getElementById('confidenceBar').style.width = `${conf}%`;
+        }, 50);
+
+        // Description
+        document.getElementById('locationDescription').textContent = result.description || '';
+
+        // Tags
+        const tagsEl = document.getElementById('locationTypeTags');
+        tagsEl.innerHTML = '';
+        const tags = Array.isArray(result.type) ? result.type : [result.type].filter(Boolean);
+        tags.forEach(tag => {
+            const span = document.createElement('span');
+            span.className = 'tag text-xs px-3 py-1 rounded-full font-medium';
+            span.textContent = tag;
+            tagsEl.appendChild(span);
+        });
+
+        // Details grid
+        const grid = document.getElementById('detailsGrid');
+        grid.innerHTML = '';
+        const details = [
+            { label: 'Region', value: result.region || 'Undetermined', icon: '🌍' },
+            { label: 'Time of Day', value: result.time_of_day || 'Unknown', icon: '🕐' },
+            { label: 'Architecture', value: result.architecture || 'N/A', icon: '🏛️' },
+        ];
+        details.forEach(d => {
+            if (!d.value || d.value === 'N/A' || d.value === 'Undetermined') return;
+            const div = document.createElement('div');
+            div.className = 'glass-light rounded-xl p-3';
+            div.innerHTML = `<p class="text-xs mb-0.5" style="color: var(--text-muted);">${d.icon} ${d.label}</p><p class="text-xs font-semibold text-white">${escapeHtml(d.value)}</p>`;
+            grid.appendChild(div);
+        });
+
+        // Timestamp
+        document.getElementById('resultTimestamp').textContent = new Date().toLocaleTimeString();
+
+        // Show
+        const content = document.getElementById('resultContent');
+        content.classList.remove('hidden');
+        content.classList.remove('result-card');
+        void content.offsetWidth; // force reflow
+        content.classList.add('result-card');
+    }
+
+    function showError(msg) {
+        document.getElementById('emptyResult').classList.add('hidden');
+        document.getElementById('resultContent').classList.add('hidden');
+        document.getElementById('errorMessage').textContent = msg;
+        document.getElementById('errorResult').classList.remove('hidden');
+    }
+
+    // ─── Auto Mode ───────────────────────────────────────────────────────────
+    function toggleAuto() {
+        autoMode = !autoMode;
+        const btn = document.getElementById('autoBtn');
+        const icon = document.getElementById('autoIcon');
+        const label = document.getElementById('autoLabel');
+        const indicator = document.getElementById('autoIndicator');
+
+        if (autoMode) {
+            btn.style.background = 'rgba(56,189,248,0.15)';
+            btn.style.borderColor = 'rgba(56,189,248,0.3)';
+            icon.style.color = '#38bdf8';
+            label.style.color = '#38bdf8';
+            indicator.classList.remove('hidden');
+            document.getElementById('analyzeBtn').disabled = true;
+            startAutoLoop();
+        } else {
+            btn.style.background = '';
+            btn.style.borderColor = '';
+            icon.style.color = 'var(--text-muted)';
+            label.style.color = 'var(--text-muted)';
+            indicator.classList.add('hidden');
+            document.getElementById('analyzeBtn').disabled = false;
+            stopAutoLoop();
+        }
+    }
+
+    function startAutoLoop() {
+        countdownSec = 10;
+        updateCountdown();
+
+        autoCountdown = setInterval(() => {
+            countdownSec--;
+            updateCountdown();
+            if (countdownSec <= 0) {
+                countdownSec = 10;
+                analyzeFrame();
+            }
+        }, 1000);
+
+        // Immediate first analysis
+        analyzeFrame();
+    }
+
+    function stopAutoLoop() {
+        clearInterval(autoCountdown);
+        clearInterval(autoInterval);
+        autoCountdown = null;
+    }
+
+    function updateCountdown() {
+        document.getElementById('countdownDisplay').textContent = `${countdownSec}s`;
+        document.getElementById('progressBar').style.width = `${(countdownSec / 10) * 100}%`;
+    }
+
+    // ─── History ─────────────────────────────────────────────────────────────
+    function addToHistory(result) {
+        const entry = {
+            name: result.name,
+            type: Array.isArray(result.type) ? result.type[0] : result.type,
+            confidence: result.confidence,
+            time: new Date().toLocaleTimeString()
+        };
+        history.unshift(entry);
+        if (history.length > 20) history.pop();
+        localStorage.setItem('locateai_history', JSON.stringify(history));
+        renderHistory();
+    }
+
+    function renderHistory() {
+        const list = document.getElementById('historyList');
+        if (!history.length) {
+            list.innerHTML = '<p class="text-xs text-center py-3" style="color: rgba(148,163,184,0.3);">No history yet</p>';
+            return;
+        }
+        list.innerHTML = history.map(h => `
+            <div class="history-item rounded-xl px-3 py-2 flex items-center gap-3 cursor-default">
+                <div class="w-1.5 h-1.5 rounded-full flex-shrink-0" style="background: ${confidenceColor(h.confidence)};"></div>
+                <div class="flex-1 min-w-0">
+                    <p class="text-xs font-medium truncate text-white">${escapeHtml(h.name)}</p>
+                    <p class="text-xs truncate" style="color: var(--text-muted);">${escapeHtml(h.type || '')} · ${h.confidence}%</p>
+                </div>
+                <span class="text-xs flex-shrink-0" style="color: rgba(148,163,184,0.4);">${h.time}</span>
+            </div>
+        `).join('');
+    }
+
+    function clearHistory() {
+        history = [];
+        localStorage.removeItem('locateai_history');
+        renderHistory();
+    }
+
+    function confidenceColor(c) {
+        if (c >= 75) return '#38bdf8';
+        if (c >= 50) return '#a78bfa';
+        return '#f87171';
+    }
+
+    // ─── Utilities ───────────────────────────────────────────────────────────
+    function escapeHtml(str) {
+        return String(str || '').replace(/[&<>"']/g, c =>
+            ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])
+        );
+    }
+
+    let toastTimeout;
+    function showToast(msg) {
+        clearTimeout(toastTimeout);
+        let toast = document.getElementById('toast');
+        if (!toast) {
+            toast = document.createElement('div');
+            toast.id = 'toast';
+            toast.style.cssText = 'position:fixed;bottom:2rem;left:50%;transform:translateX(-50%);background:#0f172a;border:1px solid rgba(255,255,255,0.1);color:white;padding:0.75rem 1.5rem;border-radius:1rem;font-size:0.75rem;font-weight:700;letter-spacing:0.1em;text-transform:uppercase;box-shadow:0 20px 60px rgba(0,0,0,0.5);z-index:9999;transition:opacity 0.3s;';
+            document.body.appendChild(toast);
+        }
+        toast.textContent = msg;
+        toast.style.opacity = '1';
+        toastTimeout = setTimeout(() => { toast.style.opacity = '0'; }, 2500);
+    }
+
+    // Allow Enter key for API key
+    document.getElementById('apiKeyInput').addEventListener('keydown', e => {
+        if (e.key === 'Enter') saveApiKey();
+    });
+</script>
+</body>
+</html>

@@ -202,8 +202,15 @@
                     
                     // 4. Clean up inline styles from Word (MsoNormal etc)
                     clean = clean.replace(/style="[^"]*mso-[^"]*"/gi, '');
-                    
-                    // 5. Clean up multiple whitespaces
+
+                    // 5. Strip font-size and font-family from inline styles so output
+                    //    inherits the destination document's (Outlook, Word, etc.) formatting
+                    clean = clean.replace(/font-size\s*:\s*[^;}"]+;?\s*/gi, '');
+                    clean = clean.replace(/font-family\s*:\s*[^;}"]+;?\s*/gi, '');
+                    // Remove any style attributes left empty after stripping
+                    clean = clean.replace(/\s*style="\s*"/gi, '');
+
+                    // 7. Clean up multiple whitespaces
                     clean = clean.replace(/\s+/g, ' ').trim();
 
                     return clean;
